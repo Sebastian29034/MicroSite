@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Catálogo de Películas</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+</head>
+<!-- Modal para reproducir tráiler -->
+<div id="trailerModal" class="modal">
+  <div class="modal-content">
+    <span id="closeModal" class="close">&times;</span>
+    <iframe id="trailerFrame" width="100%" height="400" frameborder="0" allowfullscreen></iframe>
+  </div>
+</div>
+
+<body>
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="brand">
+        <a href="#" class="logo">🎬 Películas</a>
+      </div>
+      <nav class="menu">
+        <a href="home.html" class="menu-link">Inicio</a>
+        <a href="#" class="menu-link active" id="menu-peliculas">Películas</a>
+        <a href="contacto.html" class="menu-link">Contacto</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="site">
+    <section class="hero">
+      <div class="hero-inner">
+        <h1>Catálogo de Películas</h1>
+        <div class="controls">
+          <input id="search" type="search" placeholder="Buscar por título..." />
+          <button id="reload">Recargar</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="status" class="status" aria-live="polite"></section>
+
+    <section id="grid" class="grid" role="list" aria-label="Listado de películas"></section>
+
+    <div style="margin-top:18px;">
+  <label for="movieSelector" style="font-weight:700;display:block;margin-bottom:8px">Selecciona una película:</label>
+  <select id="movieSelector" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);min-width:240px">
+    <option value="all">Todas</option>
+    <!-- Opciones generadas dinámicamente -->
+  </select>
+</div>
+
+<!-- Contenedor del mapa -->
+<section id="map-section" style="margin-top:12px">
+  <div id="map" style="width:100%;height:520px;border-radius:12px;overflow:hidden;margin-top:12px"></div>
+</section>
+
+<!-- Modal para el tráiler (tu app.js ya lo utiliza) -->
+<div id="trailerModal" class="modal" aria-hidden="true">
+  <div class="modal-content">
+    <button id="closeModal" aria-label="Cerrar">Cerrar ✕</button>
+    <iframe id="trailerFrame" allowfullscreen allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"></iframe>
+  </div>
+</div>
+
+<script>
+/* map-init.js - pequeño script independiente (no modifica app.js) */
+(function(){
+  const LOC_API = 'http://127.0.0.1:8000/ubicaciones';
+  const MOV_API = 'http://127.0.0.1:8000/peliculas';
+  const selector = document.getElementById('movieSelector');
+  const mapEl = document.getElementById('map');
+
+  // nombres locales para no chocar con app.js variables
+  let _map = null;
+  let _markersLayer = null;
+  let _locations = [];
+  let _movies = [];
+
+  function initMap() {
+    if (!mapEl) return;
+    if (typeof L === 'undefined') {
+      console.error('Leaflet no cargado');
+      return;
+    }
+    if (_map) return;
+    _map = L.map(mapEl).setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(_map);
+    _markersLayer = L.layerGroup().addTo(_map);
+  }
+
+  async function fetchLocations() {
+    try {
+      const r = await fetch(LOC_API);
+      if (!r.ok) throw new Error('Respuesta ' + r.status);
+      _locations = await r.json();
+    } catch (e) {
+      console.error('Error fetch locations:', e);
+      _locations = [];
+    }
+  }
+
+  async function fetchMovies() {
+    try {
+      const r = await fetch(MOV_API);
+      if (!r.ok) throw new Error('Respuesta ' + r.status);
+      _movies = await r.json();
+    } catch (e) {
+      console.error('Error fetch movies:', e);
+      _movies = [];
+    }
+  }
+
+  function populateSelector() {
+    if (!selector) return;
+    // limpiar y dejar 'all'
+    selector.innerHTML = '<option value="all">Todas</option>';
+    for (const m of _movies) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.titulo;
+      selector.appendChild(opt);
+    }
+    selector.addEventListener('change', ()=> {
+      const v = selector.value;
+      renderMarkers(v === 'all' ? 'all' : v);
+    });
+  }
+
+  function renderMarkers(filterMovieId = 'all') {
+    if (!_map || !_markersLayer) initMap();
+    if (!_map || !_markersLayer) return;
+    _markersLayer.clearLayers();
+    const locs = filterMovieId === 'all'
+      ? _locations
+      : _locations.filter(l => String(l.movie_id) === String(filterMovieId));
+
+    const added = [];
+    for (const loc of locs) {
+      const mv = _movies.find(mm => String(mm.id) === String(loc.movie_id));
+      const title = mv ? mv.titulo : `Película ${loc.movie_id}`;
+      const img = mv ? (mv.image_url || '') : '';
+      const trailer = mv ? (mv.video_url || '') : '';
+      const popup = document.createElement('div');
+      popup.style.minWidth = '200px';
+      popup.innerHTML = `<strong>${escapeHtml(title)}</strong><br><small style="color:gray">${escapeHtml(loc.title)}</small>
+        <p style="margin:6px 0 0;font-size:13px;color:#333">${escapeHtml(loc.description)}</p>
+        ${img ? `<div style="margin-top:8px"><img src="${img}" style="width:100%;height:90px;object-fit:cover;border-radius:6px"></div>` : ''}
+        ${trailer ? `<div style="margin-top:6px"><a href="${trailer}" target="_blank" rel="noopener">Ver tráiler</a></div>` : ''}
+      `;
+      const marker = L.marker([loc.lat, loc.lon]).bindPopup(popup);
+      marker.addTo(_markersLayer);
+      added.push(marker);
+    }
+    if (added.length > 0) {
+      const fg = L.featureGroup(added);
+      _map.fitBounds(fg.getBounds().pad(0.2));
+    } else {
+      _map.setView([20,0], 2);
+    }
+  }
+
+  // pequeño helper escape (copiado, no choca)
+  function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/[&<>"']/g, function(m){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);
+    });
+  }
+
+  // Init sequence: fetch movies+locs, then init map and populate selector+markers.
+  async function init() {
+    await Promise.all([ fetchMovies(), fetchLocations() ]);
+    populateSelector();
+    initMap();
+    renderMarkers('all');
+  }
+
+  // arrancar cuando DOM listo
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+
+    <footer class="footer">
+      <small>Proyecto de prueba • Datos desde <code>http://127.0.0.1:8000/peliculas</code></small>
+    </footer>
+  </main>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

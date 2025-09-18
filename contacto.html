@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Contacto — Mi Micrositio</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="contacto.css">
+</head>
+<body>
+    <header class="navbar">
+        <div class="nav-inner">
+            <div class="brand">
+                <a href="#" class="logo">🎬 Contacto</a>
+            </div>
+            <nav class="menu">
+                <a href="home.html" class="menu-link">Inicio</a>
+                <a href="index.html" class="menu-link">Películas</a>
+                <a href="#" class="menu-link active">Contacto</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="site">
+        <section class="section contact-section">
+            <div class="card contact-card">
+                <header>
+                    <div>
+                        <h2>Contacto</h2>
+                        <div class="helper">¿Tienes dudas o quieres colaborar? Escríbeme.</div>
+                    </div>
+                    <div>
+                        <a href="home.html" class="link-back" title="Volver al inicio">← Volver a Inicio</a>
+                    </div>
+                </header>
+
+                <form id="contactForm" novalidate>
+                    <div class="row-form">
+                        <div class="col-form">
+                            <label for="name">Nombre</label>
+                            <input id="name" name="name" type="text" minlength="2" required placeholder="Tu nombre completo">
+                        </div>
+                        <div class="col-form">
+                            <label for="email">Correo electrónico</label>
+                            <input id="email" name="email" type="email" required placeholder="tu@ejemplo.com">
+                        </div>
+                    </div>
+
+                    <label for="subject">Asunto</label>
+                    <input id="subject" name="subject" type="text" required minlength="4" placeholder="Breve descripción del motivo">
+
+                    <label for="message">Mensaje</label>
+                    <textarea id="message" name="message" required minlength="10" placeholder="Escribe tu mensaje..."></textarea>
+
+                    <div class="actions-form">
+                        <button id="sendBtn" class="btn" type="submit">Enviar mensaje</button>
+                        <button id="resetBtn" type="button" class="btn-ghost">Limpiar</button>
+                        <div id="formStatus" class="status-form" aria-live="polite"></div>
+                    </div>
+                </form>
+
+                <footer class="contact-footer">
+                    <small>Se enviará al endpoint <code>POST http://127.0.0.1:8000/contact</code></small>
+                </footer>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // El script de JavaScript se mantiene igual, ya que no tiene estilos,
+        // solo lógica funcional para el formulario.
+        (function(){
+            const API_CONTACT = 'http://127.0.0.1:8000/contact';
+            const form = document.getElementById('contactForm');
+            const btn = document.getElementById('sendBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const statusEl = document.getElementById('formStatus');
+
+            function setStatus(text, state){
+                statusEl.textContent = text || '';
+                statusEl.className = state === 'error' ? 'status-form error' : (state === 'success' ? 'status-form success' : 'status-form');
+            }
+
+            function validateEmail(email) {
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            }
+
+            resetBtn.addEventListener('click', ()=> {
+                form.reset();
+                setStatus('');
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                setStatus('');
+
+                const name = form.name.value.trim();
+                const email = form.email.value.trim();
+                const subject = form.subject.value.trim();
+                const message = form.message.value.trim();
+
+                if (name.length < 2) return setStatus('Nombre demasiado corto.', 'error');
+                if (!validateEmail(email)) return setStatus('Correo inválido.', 'error');
+                if (subject.length < 4) return setStatus('Asunto demasiado corto.', 'error');
+                if (message.length < 10) return setStatus('Mensaje demasiado corto (mínimo 10 caracteres).', 'error');
+
+                btn.disabled = true;
+                const prev = btn.textContent;
+                btn.textContent = 'Enviando...';
+                setStatus('Enviando mensaje...');
+
+                try {
+                    const res = await fetch(API_CONTACT, {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ name, email, subject, message })
+                    });
+
+                    if (!res.ok) {
+                        let detail = '';
+                        try { const j = await res.json(); detail = j.detail || ''; } catch(e) {}
+                        throw new Error(`Error ${res.status} ${detail}`);
+                    }
+
+                    setStatus('Mensaje enviado. ¡Gracias!', 'success');
+                    form.reset();
+                } catch (err) {
+                    console.error('Error enviando contacto:', err);
+                    setStatus('Error al enviar el formulario. Revisa la consola.', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = prev;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
